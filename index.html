@@ -1,0 +1,781 @@
+<!-- Chosen Palette: Slate & Sky Harmony (Slate-900, Slate-50, Sky-600, Indigo-600, Emerald-600) -->
+<!-- Application Structure Plan: Single-page application designed for managing partnership equity and calculating dividends with real-time dynamic calculations and persistent state simulation. The interface features role-based view updates (Admin dashboard vs Partner summary), interactive modal dialogs for equity management, dynamic Chart.js doughnut charts for visual equity breakdown, and responsive table views for transaction history. -->
+<!-- Visualization & Content Choices: Equity Share Breakdown -> Compare -> Dynamic Canvas Doughnut Chart (Chart.js) -> Interactive updates on partner data modification -> Provides clear percentage representation of share ownership without complex SVG or Mermaid syntax. -->
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+<!DOCTYPE html>
+<html lang="th" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดการและคำนวณเงินปันผลตามหุ้นส่วน (Cloud & Local Sync)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDK (v9 Compatibility Mode) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Prompt', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 260px;
+            max-height: 300px;
+        }
+    </style>
+</head>
+<body class="h-full text-slate-800 antialiased flex flex-col min-h-screen bg-slate-50">
+
+    <!-- 1. INITIAL SETUP SCREEN -->
+    <div id="setupScreen" class="hidden fixed inset-0 z-50 bg-slate-900 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="max-w-md w-full my-8">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white shadow-xl mb-3">
+                    <i class="fa-solid fa-user-shield text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white">ตั้งค่าระบบครั้งแรก</h1>
+                <p class="text-slate-400 text-sm mt-1">สร้างบัญชี Admin หลักเพื่อควบคุมและจัดการระบบ</p>
+            </div>
+
+            <div class="bg-white rounded-3xl shadow-2xl p-6 sm:p-8">
+                <form id="setupForm" onsubmit="event.preventDefault(); handleFirstTimeSetup();" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">ชื่อ Admin</label>
+                        <input type="text" id="setupFullName" required placeholder="ผู้ดูแลระบบหลัก" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Username</label>
+                        <input type="text" id="setupUsername" required placeholder="admin" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                        <input type="password" id="setupPassword" required placeholder="••••••••" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl shadow-lg transition">
+                        สร้างบัญชี Admin
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. LOGIN SCREEN -->
+    <div id="loginScreen" class="hidden fixed inset-0 z-50 bg-slate-900 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="max-w-md w-full my-8">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white shadow-xl mb-3">
+                    <i class="fa-solid fa-chart-pie text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">EQUITY & DIVIDEND</h1>
+                <p class="text-slate-400 text-sm mt-1">ระบบจัดการและคำนวณเงินปันผลหุ้นส่วน</p>
+            </div>
+
+            <div class="bg-white rounded-3xl shadow-2xl p-6 sm:p-8">
+                <form id="loginForm" onsubmit="event.preventDefault(); handleLogin();" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Username</label>
+                        <input type="text" id="loginUsername" required placeholder="ระบุ Username" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Password</label>
+                        <input type="password" id="loginPassword" required placeholder="••••••••" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl shadow-lg transition">
+                        เข้าสู่ระบบ
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. MAIN DASHBOARD -->
+    <div id="mainDashboard" class="hidden flex-1 flex flex-col">
+        <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl">
+                            <i class="fa-solid fa-chart-pie"></i>
+                        </div>
+                        <div>
+                            <span class="font-bold text-lg text-white block leading-none">EQUITY SHARE</span>
+                            <span class="text-xs text-emerald-400"><i class="fa-solid fa-circle-check"></i> System Ready</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="text-right hidden sm:block">
+                            <span id="navAccountName" class="font-medium text-sm text-slate-200 block">ชื่อผู้ใช้งาน</span>
+                            <span id="navAccountRole" class="text-xs text-sky-400">บทบาท</span>
+                        </div>
+                        <button onclick="handleLogout()" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition">
+                            ออกจากระบบ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="mb-6 bg-gradient-to-r from-slate-800 to-indigo-950 rounded-2xl p-6 text-white shadow-lg flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold" id="welcomeUser">ยินดีต้อนรับ</h1>
+                    <p class="text-slate-300 text-sm" id="welcomeDesc">แผงควบคุมระบบจัดสรรและตรวจสอบเงินปันผลตามสัดส่วนการถือหุ้น</p>
+                </div>
+            </div>
+
+            <!-- ADMIN VIEW -->
+            <div id="adminView" class="hidden space-y-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                        <span class="text-xs text-slate-400 font-medium uppercase">จำนวนหุ้นทั้งหมด</span>
+                        <div class="text-xl font-bold text-slate-800 mt-1" id="kpiTotalShares">0 หุ้น</div>
+                    </div>
+                    <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                        <span class="text-xs text-slate-400 font-medium uppercase">หุ้นส่วนทั้งหมด</span>
+                        <div class="text-xl font-bold text-slate-800 mt-1" id="kpiPartnerCount">0 คน</div>
+                    </div>
+                    <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                        <span class="text-xs text-slate-400 font-medium uppercase">ปันผลสะสมรวม</span>
+                        <div class="text-xl font-bold text-emerald-600 mt-1" id="kpiTotalDividends">฿0.00</div>
+                    </div>
+                    <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                        <span class="text-xs text-slate-400 font-medium uppercase">รอบการปันผล</span>
+                        <div class="text-xl font-bold text-slate-800 mt-1" id="kpiPayoutRounds">0 รอบ</div>
+                    </div>
+                </div>
+
+                <div class="flex border-b border-slate-200 space-x-4">
+                    <button onclick="switchAdminTab('calc')" id="tabCalcBtn" class="py-3 px-4 text-sm font-semibold border-b-2 border-sky-600 text-sky-600">คำนวณปันผล</button>
+                    <button onclick="switchAdminTab('partners')" id="tabPartnersBtn" class="py-3 px-4 text-sm font-semibold text-slate-500 border-b-2 border-transparent">จัดการหุ้นส่วน</button>
+                    <button onclick="switchAdminTab('history')" id="tabHistoryBtn" class="py-3 px-4 text-sm font-semibold text-slate-500 border-b-2 border-transparent">ประวัติปันผล</button>
+                </div>
+
+                <!-- Admin Calc Tab -->
+                <div id="adminTabCalc" class="space-y-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                            <h2 class="text-lg font-bold text-slate-800 mb-4">คำนวณรอบปันผลใหม่</h2>
+                            <form onsubmit="event.preventDefault(); calculateDividend();" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อรอบปันผล</label>
+                                    <input type="text" id="calcPeriodName" required placeholder="เช่น ปันผลประจำปี 2026" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">ยอดกำไรสุทธิจัดสรร (บาท)</label>
+                                    <input type="number" id="calcProfitAmount" required placeholder="0.00" step="any" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">วันที่จ่ายปันผล</label>
+                                    <input type="date" id="calcPayDate" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                                </div>
+                                <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-medium py-2.5 rounded-xl transition shadow">คำนวณสัดส่วน</button>
+                            </form>
+                        </div>
+                        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm lg:col-span-2 flex flex-col justify-between">
+                            <h2 class="text-lg font-bold text-slate-800 mb-2">สัดส่วนการถือหุ้น</h2>
+                            <div class="chart-container">
+                                <canvas id="shareChartCanvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <h3 class="font-bold text-slate-800">ผลการคำนวณจัดสรรเงินปันผล</h3>
+                            <div id="saveCalcContainer" class="hidden">
+                                <button onclick="saveDividendPeriod()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition shadow">บันทึกรอบปันผล</button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold">
+                                    <tr>
+                                        <th class="p-3.5">หุ้นส่วน</th>
+                                        <th class="p-3.5 text-right">จำนวนหุ้น</th>
+                                        <th class="p-3.5 text-right">สัดส่วน (%)</th>
+                                        <th class="p-3.5 text-right">ยอดปันผลสุทธิ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="calcPreviewTableBody" class="divide-y divide-slate-100">
+                                    <tr><td colspan="4" class="p-4 text-center text-slate-400">ยังไม่มีการคำนวณข้อมูลในรอบนี้</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Partners Tab -->
+                <div id="adminTabPartners" class="hidden space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-slate-800">รายชื่อผู้ถือหุ้น</h2>
+                        <button onclick="openPartnerModal()" class="bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition shadow">+ เพิ่มหุ้นส่วนใหม่</button>
+                    </div>
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold">
+                                    <tr>
+                                        <th class="p-3.5">ชื่อ-นามสกุล</th>
+                                        <th class="p-3.5">Username</th>
+                                        <th class="p-3.5 text-right">จำนวนหุ้น</th>
+                                        <th class="p-3.5 text-center">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="partnersTableBody" class="divide-y divide-slate-100">
+                                    <tr><td colspan="4" class="p-4 text-center text-slate-400">ยังไม่มีข้อมูลหุ้นส่วน</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin History Tab -->
+                <div id="adminTabHistory" class="hidden space-y-4">
+                    <div id="historyListContainer" class="space-y-4">
+                        <div class="bg-white rounded-2xl border border-slate-200 p-6 text-center text-slate-400 shadow-sm">ยังไม่มีประวัติการจ่ายปันผล</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PARTNER VIEW -->
+            <div id="partnerView" class="hidden space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <span class="text-xs text-slate-400 font-bold uppercase">หุ้นที่คุณถือครอง</span>
+                        <div class="text-3xl font-bold text-slate-800 mt-1" id="userShareCount">0 หุ้น</div>
+                        <span class="text-xs font-semibold text-emerald-600 block mt-1" id="userSharePercent">สัดส่วน 0%</span>
+                    </div>
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <span class="text-xs text-slate-400 font-bold uppercase">ปันผลรวมที่ได้รับทั้งหมด</span>
+                        <div class="text-3xl font-bold text-emerald-600 mt-1" id="userTotalEarned">฿0.00</div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                    <div class="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-800">ประวัติเงินปันผลของคุณ</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold">
+                                <tr>
+                                    <th class="p-3.5">รอบรายการ</th>
+                                    <th class="p-3.5">วันที่จ่าย</th>
+                                    <th class="p-3.5 text-right">ยอดปันผลสุทธิ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="userHistoryTableBody" class="divide-y divide-slate-100">
+                                <tr><td colspan="3" class="p-4 text-center text-slate-400">ยังไม่มีประวัติเงินปันผล</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL ADD/EDIT PARTNER -->
+    <div id="partnerModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <h3 class="font-bold text-lg text-slate-800" id="partnerModalTitle">เพิ่ม / แก้ไข หุ้นส่วน</h3>
+            <form onsubmit="event.preventDefault(); savePartner();" class="space-y-3">
+                <input type="hidden" id="partnerFormId">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อ-นามสกุล</label>
+                    <input type="text" id="partnerFormName" required placeholder="ชื่อ-นามสกุล" class="w-full p-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Username</label>
+                    <input type="text" id="partnerFormUsername" required placeholder="Username" class="w-full p-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Password</label>
+                    <input type="text" id="partnerFormPassword" required placeholder="Password" class="w-full p-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">จำนวนหุ้น</label>
+                    <input type="number" id="partnerFormShares" required placeholder="จำนวนหุ้น" min="1" class="w-full p-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                </div>
+                <div class="flex justify-end gap-2 pt-3">
+                    <button type="button" onclick="closePartnerModal()" class="px-4 py-2 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50 transition">ยกเลิก</button>
+                    <button type="submit" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-semibold transition shadow">บันทึก</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "YOUR_FIREBASE_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+            projectId: "YOUR_PROJECT",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef"
+        };
+
+        let db = null;
+        let adminAccount = null;
+        let partners = [];
+        let dividendHistory = [];
+        let currentUser = null;
+        let currentCalcPreview = null;
+        let pieChartInstance = null;
+
+        const STORAGE_KEYS = {
+            ADMIN: 'div_local_admin',
+            PARTNERS: 'div_local_partners',
+            HISTORY: 'div_local_history'
+        };
+
+        window.onload = function() {
+            document.getElementById('calcPayDate').value = new Date().toISOString().split('T')[0];
+            
+            try {
+                if (firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY" && !firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                    db = firebase.database();
+                }
+            } catch (err) {
+                console.warn("Firebase Dynamic Init Skipped or Invalid Config. Fallback to Local Storage.", err);
+            }
+
+            if (db) {
+                setupFirebaseListeners();
+            } else {
+                loadLocalData();
+                checkSystemState();
+            }
+        };
+
+        function setupFirebaseListeners() {
+            db.ref('div_app_admin').on('value', snap => {
+                adminAccount = snap.val();
+                checkSystemState();
+            });
+
+            db.ref('div_app_partners').on('value', snap => {
+                const val = snap.val();
+                partners = val ? (Array.isArray(val) ? val : Object.values(val)) : [];
+                updateDashboardUI();
+            });
+
+            db.ref('div_app_history').on('value', snap => {
+                const val = snap.val();
+                dividendHistory = val ? (Array.isArray(val) ? val : Object.values(val)) : [];
+                updateDashboardUI();
+            });
+        }
+
+        function loadLocalData() {
+            adminAccount = JSON.parse(localStorage.getItem(STORAGE_KEYS.ADMIN)) || null;
+            partners = JSON.parse(localStorage.getItem(STORAGE_KEYS.PARTNERS)) || [
+                { name: 'สมชาย ใจดี', username: 'somchai', password: '123', shares: 5000 },
+                { name: 'วิภาดา รักดี', username: 'wiphada', password: '123', shares: 3000 },
+                { name: 'กิตติศักดิ์ มีสุข', username: 'kittisak', password: '123', shares: 2000 }
+            ];
+            dividendHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY)) || [];
+        }
+
+        function saveLocalData() {
+            if (adminAccount) localStorage.setItem(STORAGE_KEYS.ADMIN, JSON.stringify(adminAccount));
+            localStorage.setItem(STORAGE_KEYS.PARTNERS, JSON.stringify(partners));
+            localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(dividendHistory));
+        }
+
+        function checkSystemState() {
+            if (!adminAccount) {
+                showScreen('setup');
+                return;
+            }
+            const sessionData = sessionStorage.getItem('div_app_session');
+            if (sessionData) {
+                try {
+                    currentUser = JSON.parse(sessionData);
+                    showScreen('dashboard');
+                } catch(e) {
+                    showScreen('login');
+                }
+            } else {
+                showScreen('login');
+            }
+        }
+
+        function showScreen(name) {
+            document.getElementById('setupScreen').classList.add('hidden');
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('mainDashboard').classList.add('hidden');
+
+            if (name === 'setup') document.getElementById('setupScreen').classList.remove('hidden');
+            if (name === 'login') document.getElementById('loginScreen').classList.remove('hidden');
+            if (name === 'dashboard') {
+                document.getElementById('mainDashboard').classList.remove('hidden');
+                updateDashboardUI();
+            }
+        }
+
+        function handleFirstTimeSetup() {
+            adminAccount = {
+                name: document.getElementById('setupFullName').value.trim(),
+                username: document.getElementById('setupUsername').value.trim(),
+                password: document.getElementById('setupPassword').value
+            };
+
+            if (db) {
+                db.ref('div_app_admin').set(adminAccount).then(() => {
+                    completeLogin({ role: 'admin', data: adminAccount });
+                });
+            } else {
+                saveLocalData();
+                completeLogin({ role: 'admin', data: adminAccount });
+            }
+        }
+
+        function handleLogin() {
+            const u = document.getElementById('loginUsername').value.trim();
+            const p = document.getElementById('loginPassword').value;
+
+            if (adminAccount && u === adminAccount.username && p === adminAccount.password) {
+                completeLogin({ role: 'admin', data: adminAccount });
+                return;
+            }
+
+            const foundPartner = partners.find(pt => pt.username === u && pt.password === p);
+            if (foundPartner) {
+                completeLogin({ role: 'partner', data: foundPartner });
+                return;
+            }
+
+            Swal.fire({ icon: 'error', title: 'เข้าสู่ระบบไม่สำเร็จ', text: 'Username หรือ Password ไม่ถูกต้อง' });
+        }
+
+        function completeLogin(userData) {
+            currentUser = userData;
+            sessionStorage.setItem('div_app_session', JSON.stringify(currentUser));
+            showScreen('dashboard');
+        }
+
+        function handleLogout() {
+            sessionStorage.removeItem('div_app_session');
+            currentUser = null;
+            showScreen('login');
+        }
+
+        function updateDashboardUI() {
+            if (!currentUser) return;
+
+            const totalShares = partners.reduce((sum, p) => sum + Number(p.shares || 0), 0);
+            const totalDividendsAll = dividendHistory.reduce((sum, h) => sum + Number(h.profitAmount || 0), 0);
+
+            if (currentUser.role === 'admin') {
+                document.getElementById('adminView').classList.remove('hidden');
+                document.getElementById('partnerView').classList.add('hidden');
+
+                document.getElementById('navAccountName').innerText = currentUser.data.name;
+                document.getElementById('navAccountRole').innerText = 'ผู้ดูแลระบบ (Admin)';
+                document.getElementById('welcomeUser').innerText = `ยินดีต้อนรับ, ${currentUser.data.name}`;
+
+                document.getElementById('kpiTotalShares').innerText = totalShares.toLocaleString() + ' หุ้น';
+                document.getElementById('kpiPartnerCount').innerText = partners.length + ' คน';
+                document.getElementById('kpiTotalDividends').innerText = '฿' + totalDividendsAll.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                document.getElementById('kpiPayoutRounds').innerText = dividendHistory.length + ' รอบ';
+
+                renderPartnersTable();
+                renderHistoryList();
+                renderChart();
+            } else {
+                document.getElementById('adminView').classList.add('hidden');
+                document.getElementById('partnerView').classList.remove('hidden');
+
+                const myData = partners.find(p => p.username === currentUser.data.username) || currentUser.data;
+                document.getElementById('navAccountName').innerText = myData.name;
+                document.getElementById('navAccountRole').innerText = 'ผู้ถือหุ้น';
+                document.getElementById('welcomeUser').innerText = `ยินดีต้อนรับคุณ ${myData.name}`;
+
+                const myShares = Number(myData.shares || 0);
+                const mySharePercent = totalShares > 0 ? (myShares / totalShares) * 100 : 0;
+                document.getElementById('userShareCount').innerText = myShares.toLocaleString() + ' หุ้น';
+                document.getElementById('userSharePercent').innerText = `สัดส่วน ${mySharePercent.toFixed(2)}%`;
+
+                let myTotalEarned = 0;
+                let userHistoryHtml = '';
+                dividendHistory.forEach(h => {
+                    const item = h.allocations ? h.allocations.find(a => a.username === myData.username) : null;
+                    if (item) {
+                        myTotalEarned += Number(item.amount);
+                        userHistoryHtml += `
+                            <tr class="hover:bg-slate-50 transition">
+                                <td class="p-3.5 font-medium text-slate-800">${h.periodName}</td>
+                                <td class="p-3.5 text-slate-500">${h.payDate}</td>
+                                <td class="p-3.5 text-right font-bold text-emerald-600">฿${Number(item.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                document.getElementById('userTotalEarned').innerText = '฿' + myTotalEarned.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                if (userHistoryHtml) {
+                    document.getElementById('userHistoryTableBody').innerHTML = userHistoryHtml;
+                } else {
+                    document.getElementById('userHistoryTableBody').innerHTML = '<tr><td colspan="3" class="p-4 text-center text-slate-400">ยังไม่มีประวัติเงินปันผล</td></tr>';
+                }
+            }
+        }
+
+        function switchAdminTab(tab) {
+            document.getElementById('adminTabCalc').classList.add('hidden');
+            document.getElementById('adminTabPartners').classList.add('hidden');
+            document.getElementById('adminTabHistory').classList.add('hidden');
+            
+            document.getElementById('tabCalcBtn').className = "py-3 px-4 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-slate-700";
+            document.getElementById('tabPartnersBtn').className = "py-3 px-4 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-slate-700";
+            document.getElementById('tabHistoryBtn').className = "py-3 px-4 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-slate-700";
+
+            if (tab === 'calc') {
+                document.getElementById('adminTabCalc').classList.remove('hidden');
+                document.getElementById('tabCalcBtn').className = "py-3 px-4 text-sm font-semibold border-b-2 border-sky-600 text-sky-600";
+            } else if (tab === 'partners') {
+                document.getElementById('adminTabPartners').classList.remove('hidden');
+                document.getElementById('tabPartnersBtn').className = "py-3 px-4 text-sm font-semibold border-b-2 border-sky-600 text-sky-600";
+            } else if (tab === 'history') {
+                document.getElementById('adminTabHistory').classList.remove('hidden');
+                document.getElementById('tabHistoryBtn').className = "py-3 px-4 text-sm font-semibold border-b-2 border-sky-600 text-sky-600";
+            }
+        }
+
+        function calculateDividend() {
+            const periodName = document.getElementById('calcPeriodName').value.trim();
+            const profitAmount = parseFloat(document.getElementById('calcProfitAmount').value);
+            const payDate = document.getElementById('calcPayDate').value;
+
+            const totalShares = partners.reduce((sum, p) => sum + Number(p.shares || 0), 0);
+            if (totalShares <= 0) {
+                Swal.fire({ icon: 'warning', title: 'ไม่สามารถคำนวณได้', text: 'กรุณาเพิ่มหุ้นส่วนและจำนวนหุ้นก่อนทำการคำนวณ' });
+                return;
+            }
+
+            let allocations = [];
+            let html = '';
+            partners.forEach(p => {
+                const shares = Number(p.shares || 0);
+                const percent = (shares / totalShares) * 100;
+                const amount = (profitAmount * shares) / totalShares;
+                allocations.push({ name: p.name, username: p.username, shares, percent, amount });
+                html += `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-3.5 font-medium text-slate-800">${p.name}</td>
+                        <td class="p-3.5 text-right font-medium">${shares.toLocaleString()}</td>
+                        <td class="p-3.5 text-right text-slate-500">${percent.toFixed(2)}%</td>
+                        <td class="p-3.5 text-right font-bold text-emerald-600">฿${amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('calcPreviewTableBody').innerHTML = html;
+            document.getElementById('saveCalcContainer').classList.remove('hidden');
+
+            currentCalcPreview = { id: Date.now(), periodName, profitAmount, payDate, allocations };
+        }
+
+        function saveDividendPeriod() {
+            if (!currentCalcPreview) return;
+            dividendHistory.unshift(currentCalcPreview);
+
+            if (db) {
+                db.ref('div_app_history').set(dividendHistory).then(() => {
+                    Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: 'บันทึกรอบปันผลเรียบร้อยแล้ว' });
+                    document.getElementById('saveCalcContainer').classList.add('hidden');
+                    currentCalcPreview = null;
+                });
+            } else {
+                saveLocalData();
+                Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', text: 'บันทึกรอบปันผลเรียบร้อยแล้ว (Local Mode)' });
+                document.getElementById('saveCalcContainer').classList.add('hidden');
+                currentCalcPreview = null;
+                updateDashboardUI();
+            }
+        }
+
+        function renderPartnersTable() {
+            let html = '';
+            if (partners.length === 0) {
+                html = '<tr><td colspan="4" class="p-4 text-center text-slate-400">ยังไม่มีข้อมูลหุ้นส่วน</td></tr>';
+            } else {
+                partners.forEach((p, index) => {
+                    html += `
+                        <tr class="hover:bg-slate-50 transition">
+                            <td class="p-3.5 font-medium text-slate-800">${p.name}</td>
+                            <td class="p-3.5 text-slate-500">${p.username}</td>
+                            <td class="p-3.5 text-right font-bold text-slate-700">${Number(p.shares || 0).toLocaleString()} หุ้น</td>
+                            <td class="p-3.5 text-center space-x-2">
+                                <button onclick="openPartnerModal(${index})" class="text-sky-600 hover:text-sky-800 text-xs font-semibold">แก้ไข</button>
+                                <button onclick="deletePartner(${index})" class="text-rose-600 hover:text-rose-800 text-xs font-semibold">ลบ</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            document.getElementById('partnersTableBody').innerHTML = html;
+        }
+
+        function renderHistoryList() {
+            let html = '';
+            if (dividendHistory.length === 0) {
+                html = '<div class="bg-white rounded-2xl border border-slate-200 p-6 text-center text-slate-400 shadow-sm">ยังไม่มีประวัติการจ่ายปันผล</div>';
+            } else {
+                dividendHistory.forEach(h => {
+                    let itemsHtml = '';
+                    if (h.allocations) {
+                        h.allocations.forEach(a => {
+                            itemsHtml += `
+                                <div class="flex justify-between text-sm py-1.5 border-b border-slate-100 last:border-0">
+                                    <span class="text-slate-700">${a.name} (${a.shares.toLocaleString()} หุ้น)</span>
+                                    <span class="font-bold text-emerald-600">฿${Number(a.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                </div>`;
+                        });
+                    }
+                    html += `
+                        <div class="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-sm">
+                            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                                <div>
+                                    <h4 class="font-bold text-slate-800 text-base">${h.periodName}</h4>
+                                    <span class="text-xs text-slate-400">วันที่จ่าย: ${h.payDate}</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-slate-400 block">กำไรสุทธิทั้งหมด</span>
+                                    <span class="font-bold text-emerald-600 text-lg">฿${Number(h.profitAmount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                </div>
+                            </div>
+                            <div class="bg-slate-50 p-3.5 rounded-xl space-y-1">${itemsHtml}</div>
+                        </div>
+                    `;
+                });
+            }
+            document.getElementById('historyListContainer').innerHTML = html;
+        }
+
+        function renderChart() {
+            const canvasEl = document.getElementById('shareChartCanvas');
+            if (!canvasEl) return;
+            const ctx = canvasEl.getContext('2d');
+            const labels = partners.map(p => p.name);
+            const data = partners.map(p => Number(p.shares || 0));
+
+            if (pieChartInstance) pieChartInstance.destroy();
+
+            pieChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels.length ? labels : ['ยังไม่มีหุ้นส่วน'],
+                    datasets: [{
+                        data: data.length ? data : [1],
+                        backgroundColor: ['#0284c7', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { font: { family: 'Prompt', size: 12 } } }
+                    }
+                }
+            });
+        }
+
+        function openPartnerModal(index = null) {
+            document.getElementById('partnerModal').classList.remove('hidden');
+            if (index !== null && partners[index]) {
+                const p = partners[index];
+                document.getElementById('partnerFormId').value = index;
+                document.getElementById('partnerFormName').value = p.name;
+                document.getElementById('partnerFormUsername').value = p.username;
+                document.getElementById('partnerFormPassword').value = p.password;
+                document.getElementById('partnerFormShares').value = p.shares;
+                document.getElementById('partnerModalTitle').innerText = 'แก้ไขข้อมูลหุ้นส่วน';
+            } else {
+                document.getElementById('partnerFormId').value = '';
+                document.getElementById('partnerFormName').value = '';
+                document.getElementById('partnerFormUsername').value = '';
+                document.getElementById('partnerFormPassword').value = '';
+                document.getElementById('partnerFormShares').value = '';
+                document.getElementById('partnerModalTitle').innerText = 'เพิ่มหุ้นส่วนใหม่';
+            }
+        }
+
+        function closePartnerModal() {
+            document.getElementById('partnerModal').classList.add('hidden');
+        }
+
+        function savePartner() {
+            const index = document.getElementById('partnerFormId').value;
+            const newPartner = {
+                name: document.getElementById('partnerFormName').value.trim(),
+                username: document.getElementById('partnerFormUsername').value.trim(),
+                password: document.getElementById('partnerFormPassword').value,
+                shares: Number(document.getElementById('partnerFormShares').value)
+            };
+
+            if (index === '') {
+                partners.push(newPartner);
+            } else {
+                partners[index] = newPartner;
+            }
+
+            if (db) {
+                db.ref('div_app_partners').set(partners).then(() => {
+                    closePartnerModal();
+                    Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1500, showConfirmButton: false });
+                });
+            } else {
+                saveLocalData();
+                closePartnerModal();
+                updateDashboardUI();
+                Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1500, showConfirmButton: false });
+            }
+        }
+
+        function deletePartner(index) {
+            Swal.fire({
+                title: 'ยืนยันการลบ?',
+                text: 'คุณต้องการลบรายชื่อหุ้นส่วนนี้ใช่หรือไม่',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'ลบข้อมูล',
+                cancelButtonText: 'ยกเลิก',
+                confirmButtonColor: '#ef4444'
+            }).then(result => {
+                if (result.isConfirmed) {
+                    partners.splice(index, 1);
+                    if (db) {
+                        db.ref('div_app_partners').set(partners).then(() => {
+                            Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', timer: 1500, showConfirmButton: false });
+                        });
+                    } else {
+                        saveLocalData();
+                        updateDashboardUI();
+                        Swal.fire({ icon: 'success', title: 'ลบสำเร็จ', timer: 1500, showConfirmButton: false });
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
